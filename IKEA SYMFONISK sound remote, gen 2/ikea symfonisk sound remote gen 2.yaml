@@ -33,6 +33,18 @@ blueprint:
       default: []
       selector:
         action: {}
+    action_vol_up_hold:
+      name: Volume Up button hold
+      description: Action to run on volume up button hold (repeats the action until released).
+      default: []
+      selector:
+        action: {}
+    action_vol_down_hold:
+      name: Volume Down button hold
+      description: Action to run on volume down button hold (repeats the action until released).
+      default: []
+      selector:
+        action: {}
     action_next:
       name: Next button press
       description: Action to run on next button press.
@@ -81,7 +93,7 @@ blueprint:
       default: []
       selector:
         action: {}
-  source_url: https://community.home-assistant.io/t/zha-ikea-e2123-symfonisk-gen2-remote-customisable/584626
+  source_url: https://github.com/pessom/hass-blueprints/tree/main/IKEA%20SYMFONISK%20sound%20remote%2C%20gen%202
 mode: single
 max_exceeded: silent
 trigger:
@@ -136,6 +148,20 @@ action:
           - "{{ endpoint_id == 1 }}"
           - "{{ trigger.event.data.params.move_mode == 1}}"
         sequence: !input action_vol_down
+      - conditions:
+          - "{{ command == 'move' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ endpoint_id == 1 }}"
+          - "{{ trigger.event.data.params.move_mode == 0}}"
+          - "{{ trigger.event.data.params.options_mask == 0}}"
+        sequence: !input action_vol_up_hold
+      - conditions:
+          - "{{ command == 'move' }}"
+          - "{{ cluster_id == 8 }}"
+          - "{{ endpoint_id == 1 }}"
+          - "{{ trigger.event.data.params.move_mode == 1 }}"
+          - "{{ trigger.event.data.params.options_mask == 0}}"
+        sequence: !input action_vol_down_hold
       - conditions:
           - "{{ command == 'short_release' }}"
           - "{{ endpoint_id == 2 }}"
