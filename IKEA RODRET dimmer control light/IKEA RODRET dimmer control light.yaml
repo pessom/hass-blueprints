@@ -1,0 +1,190 @@
+blueprint:
+  homeassistant:
+    min_version: 2024.10.0
+  author: damru
+  domain: automation
+  name: IKEA Rodret Light control ZHA
+  description: >
+    ## Control a light with **IKEA RODRET** remotes
+
+    Only for use with [ZHA](https://www.home-assistant.io/integrations/zha/).
+
+    Available controls:
+
+    - Press **on** to turn on the light 
+    (Optional: set the target brightness by enabling **Force Brightness** and setting a **Brightness** value)
+
+    - Press **off** to turn off the light
+
+    - Hold **on** to increase the brightness
+
+    - Hold **off** to decrease the brightness down to 1%
+  source_url: https://github.com/damru/ha-blueprints/blob/main/ikea_E2201-E2213_ZHA-Z2M_control-light.yaml
+  input:
+    remote_device:
+      name: Remote
+      description: >
+        IKEA remote Rodret to use.
+      default: ""
+      selector:
+        device:
+          filter:
+            - integration: zha
+              manufacturer: IKEA of Sweden
+              model: RODRET Dimmer
+          multiple: false
+    light:
+      name: Light
+      description: Light to control
+      selector:
+        entity:
+          filter:
+            domain: light
+          multiple: false
+    brightness_section:
+      name: Brightness
+      icon: mdi:lightbulb-on-50
+      collapsed: true
+      input:
+        helper_force_brightness:
+          name: Force brightness
+          description: Force the brightness to **Brightness** value when light turns on.
+          default: false
+          selector:
+            boolean: {}
+        helper_brightness:
+          name: Brightness
+          description:
+            Target light brightness when turning on. Requires **Force brightness**
+            to be enabled.
+          default: 50
+          selector:
+            number:
+              unit_of_measurement: "%"
+              min: 1.0
+              max: 100.0
+              step: 1.0
+              mode: slider
+mode: restart
+max_exceeded: silent
+triggers:
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote_device
+      command: "on"
+      cluster_id: 6
+      endpoint_id: 1
+    id: press-on-zha-e2201
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote_device
+      command: "off"
+      cluster_id: 6
+      endpoint_id: 1
+    id: press-off-zha-e2201
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote_device
+      command: "move_with_on_off"
+      cluster_id: 8
+      endpoint_id: 1
+      args: [0, 83]
+    id: hold-on-zha-e2201
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote_device
+      command: "move"
+      cluster_id: 8
+      endpoint_id: 1
+      args: [1, 83, 0, 0]
+    id: hold-off-zha-e2201
+  - trigger: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote_device
+      command: stop_with_on_off
+      endpoint_id: 1
+      cluster_id: 8
+    id: release-zha-e2201
+actions:
+  - variables:
+      helper_force_brightness: !input helper_force_brightness
+      helper_hold_delay: 0.1
+      helper_hold_dim_step: 4
+      light: !input light
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - press-on-zha-e2201
+        sequence:
+          - choose:
+              - conditions: "{{ helper_force_brightness }}"
+                sequence:
+                  - action: light.turn_on
+                    target:
+                      entity_id: !input light
+                    data:
+                      brightness_pct: !input helper_brightness
+            default:
+              - action: light.turn_on
+                target:
+                  entity_id: !input light
+                data: {}
+      - conditions:
+          - condition: trigger
+            id:
+              - press-off-zha-e2201
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: !input light
+            data: {}
+      - conditions:
+          - condition: trigger
+            id:
+              - hold-on-zha-e2201
+        sequence:
+          - repeat:
+              while:
+                - condition: trigger
+                  id:
+                    - hold-on-zha-e2201
+              sequence:
+                - parallel:
+                    - action: light.turn_on
+                      target:
+                        entity_id: !input light
+                      data:
+                        brightness_step_pct: "{{ helper_hold_dim_step }}"
+                        transition: "{{ helper_hold_delay }}"
+                    - delay: "{{ helper_hold_delay }}"
+      - conditions:
+          - condition: trigger
+            id:
+              - hold-off-zha-e2201
+        sequence:
+          - variables:
+              brightness_pct: "{{ iif(is_state(light, 'on'), state_attr(light, 'brightness'), 0) * 100 / 255 }}"
+              total_iterations_to_zero: "{{ (brightness_pct / helper_hold_dim_step) | round(0, 'ceil') }}"
+          - repeat:
+              count: "{{ total_iterations_to_zero - 1 }}"
+              sequence:
+                - parallel:
+                    - action: light.turn_on
+                      target:
+                        entity_id: !input light
+                      data:
+                        brightness_step_pct: "{{ helper_hold_dim_step | int * -1 }}"
+                        transition: "{{ helper_hold_delay }}"
+                    - delay: "{{ helper_hold_delay }}"
+          - action: light.turn_on
+            target:
+              entity_id: !input light
+            data:
+              brightness_pct: 1
+              transition: "{{ helper_hold_delay }}"
